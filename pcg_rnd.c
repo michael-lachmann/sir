@@ -17,7 +17,7 @@ void pcg_init () {
 	int fd;
 	unsigned long sz;
 	uint64_t initstate;
-
+#if 0
 	if (g.state != 0) return;
 
 	fd = open("/dev/random", O_RDONLY);
@@ -35,7 +35,8 @@ void pcg_init () {
 		fprintf(stderr, " can't read /dev/random\n");
 		exit(1);
 	}
-
+#endif
+	initstate = 42 ;
 	g.state = (initstate + 1442695040888963407ULL) * 6364136223846793005ULL + 1442695040888963407ULL;
 }
 
@@ -46,7 +47,7 @@ uint32_t pcg_32 () {
 	uint32_t value, rot;
 
 	g.state = g.state * 6364136223846793005ULL + 1442695040888963407ULL;
-	value = ((state >> 18u) ^ state) >> 27u;
+	value = (uint32_t)(((state >> 18u) ^ state) >> 27u);
 	rot = state >> 59u;
 	return (value >> rot) | (value << ((- rot) & 31));
 }
