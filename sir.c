@@ -2,7 +2,7 @@
 // code for SIR on networks by Petter Holme (2018)
 //#define TIME
 #include "sir.h"
-
+//test
 
 
 GLOBALS g;
