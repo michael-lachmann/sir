@@ -36,7 +36,7 @@ typedef double real ;
 
 typedef struct GLOBALS {
 	// INPUT PARAMETERS
-	real beta, gamma; // infection rate
+	real beta, INV_beta, gamma, INV_gamma; // infection rate
 	real Em, Ev ; // mean and variance of time in E
 
 	real *w_time, *w_val ;

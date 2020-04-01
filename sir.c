@@ -95,7 +95,7 @@ void unconditional_infect_neighbours( unsigned int me) {
 	for ( i = 0; i < nd[me].deg; i++) {
 		you = nd[me].nb[i];
 		if (nd[you].state == s_S) { // if you is S, you can be infected
-			t = g.now + g.rexp[pcg_16()] * g.weight[ nd[me].w[i] ] ; // get the infection time
+			t = g.now + g.rexp[pcg_16()] * g.weight[ nd[me].w[i] ] ; // get the infection time. (weight already includes 1/beta)
 			if ( t < nd[me].time) {    // when you become exposed, if you do
 				old_t = nd[you].time ;
 				nd[you].time = t;
@@ -136,7 +136,7 @@ void infect_SEIR () {
 			g.s[s_E]++ ;
 			break ;
 		case s_E: // Finished exposed period, start spreading, switch to I.
-			nd[me].time += g.rexp[pcg_16()] ; // Time to become resistant
+			nd[me].time += g.rexp[pcg_16()] * g.INV_gamma; // Time to become resistant
 			down_heap( nd[me].heap ) ;
 
 			nd[me].state = s_I ;
@@ -173,7 +173,7 @@ void reinfect_s_I_neighbours()
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 // this routine runs one SIR outbreak from a random seed node
 
-void seir_init() {
+void seir_init( unsigned int nS) {
 	unsigned int i, source;
 
 	// g.t = 0.0;
@@ -189,12 +189,16 @@ void seir_init() {
 		nd[i].state = s_S ;
 	}
 
+	for( i=1; i <= nS; i++) {
 	// get & infect the source
-	source = pcg_32_bounded(g.n);
-	nd[source].time = 0.0;
-	nd[source].state = s_S ;
-	nd[source].heap = 1;
-	g.heap[ g.nheap = 1 ] = source;
+		do {
+			source = pcg_32_bounded(g.n);
+		} while( nd[source].time==0.0 ) ;
+		nd[source].time = 0.0;
+		nd[source].state = s_S ;
+		nd[source].heap = i;
+		g.heap[ g.nheap = i ] = source;
+	}
 
 }
 
@@ -244,8 +248,10 @@ int main (int argc, char *argv[]) {
 		break ;
 	case 'S': // SEIR model
 		sscanf(argv[k],"%c,%lg,%lg,%lg,%lg",&arg_type,&g.beta, &g.gamma,&g.Em, &g.Ev) ;
+		g.INV_beta = 1.0 / g.beta ;
+		g.INV_gamma = 1.0 / g.gamma ;
 		for (i = 0; i < 0x10000; i++)
-			g.rnorm_E[i] = g.Ev * ( (1.0 + i) / 0x10000 ) + g.Em ;
+			g.rnorm_E[i] = g.Ev * myQnorm( (1.0 + i) / 0x10000 ) + g.Em ;
 		break ;
 	case 'R': // random seed
 		sscanf( argv[k],"%c,%u",&arg_type,&i) ;
@@ -302,13 +308,13 @@ int main (int argc, char *argv[]) {
 	g.heap = malloc((g.n + 1) * sizeof(unsigned int));
 
 	for (i = 0; i < 0x10000; i++)
-		g.rexp[i] = -log((i + 1.0) / 0x10000) / g.gamma ;
+		g.rexp[i] = -log((i + 1.0) / 0x10000) ;
 
 	for( T_i=0; T_i < g.w_n; T_i++) {
 		for( i=1; i< g.nweight; i++) 
-			g.weight[i] = 1.0 / (g.w_val[  T_i * (g.nweight) + i] * g.beta) ;
+			g.weight[i] = 1.0 / (g.w_val[  T_i*(g.nweight) +i ] * g.beta) ;
 		if( T_i==0)
-			seir_init() ;
+			seir_init( 10) ;
 		else
 			reinfect_s_I_neighbours() ;
 		seir( g.w_time[T_i] ) ;
