@@ -23,8 +23,20 @@
 #endif
 
 typedef double real ;
+typedef char   bool ;
+typedef unsigned char state ;
+#define TRUE (1==1)
+#define FALSE (1!=1)
+
+
+
 
 #define NAVG 10 // number of runs for averages
+
+#define NSTATES (256)
+#define NQUART (0x100)
+#define EPSILON (1e-10)
+#define NEVER (DBL_MAX)
 
 #define I_OR_R (UINT_MAX - 1)
 #define NONE UINT_MAX
@@ -36,8 +48,6 @@ typedef double real ;
 
 typedef struct GLOBALS {
 	// INPUT PARAMETERS
-	real beta, INV_beta, gamma, INV_gamma; // infection rate
-	real Em, Ev ; // mean and variance of time in E
 
 	real *w_time, *w_val ;
 	int w_n ;
@@ -45,14 +55,29 @@ typedef struct GLOBALS {
 	unsigned int n;
 	// OTHER GLOBALS
 	unsigned int nheap, *heap;
+
 	real *weight  ; // weight for edge indexes - so th
 	unsigned int nweight ;
+
+	unsigned int ngroup ; // number of groups read from net. Can be age groups, for example.
 	// OUTBREAK STATS
-	unsigned int s[4]; // number of S E I R.
+	unsigned int s[NSTATES]; // number of S E I R.
 	real t, now;
+	real av_deg ;
 	// FOR RNG
 	uint64_t state;
 	uint32_t rmem;
+	real          *time_dist [NSTATES] ;
+	state *state_dist[NSTATES] ;
+	real          state_infect_rate[NSTATES] ;
+	bool	      self_change[NSTATES] ; // can change without infection?
+	bool          infectable[NSTATES] ;
+
+
+	real beta, gamma_h, gamma_y, gamma_a, sigma, eta, tau, omega_y, omega_h, mu;
+
+	real nu[50],pi[50],omega_e[50], omega_a[50] ;
+
 	real rexp[0x10000];
 	real rnorm_E[0x10000]; // distribution of times in E.
 } GLOBALS;
@@ -65,13 +90,14 @@ enum infection_state
 
 typedef struct NODE {
 	unsigned int deg; // degree (num of nb and w)
+	real w_deg_sum ;
 	unsigned int *nb ; // neighbors
 	unsigned int *w;  // edge weight index
 
-	enum infection_state state ; 
+	unsigned int state, next_state ; // state also includes things like age risk etc. 
+	real time, next_time;        // time of prev, next event
 
 	unsigned int heap; // place on heap
-	real time;        // time of next event
 } NODE;
 
 
@@ -84,11 +110,13 @@ extern void del_root ();
 extern void init_rng ();
 extern void read_data (FILE *, unsigned int w);
 extern void read_data3 (FILE *);
+extern void read_data5 (FILE *);
 void gen_full_nwk( unsigned int n, unsigned int clust, unsigned int w) ;
 void gen_nwk( unsigned int n, unsigned int deg, unsigned int w) ;
 
 // pcg_rnd.c
 extern uint16_t pcg_16 ();
+extern uint8_t pcg_8() ;
 extern uint32_t pcg_32 ();
 extern uint32_t pcg_32_bounded ();
 extern void pcg_init ();

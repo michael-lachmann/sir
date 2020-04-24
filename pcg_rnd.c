@@ -77,4 +77,20 @@ uint16_t pcg_16 () {
 	return (uint16_t) g.rmem;
 }
 
+uint8_t pcg_8() {
+	static unsigned int n=0 ;
+	static uint32_t r ;
+
+	if (n == 0) {
+		r = pcg_32() ;
+		n = 4 ;
+	}
+	else {
+		r /= 0x100 ;
+		n-- ;
+	}
+	return (uint8_t) (r & 0xff);
+
+}
+
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
