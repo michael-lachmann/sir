@@ -34,7 +34,8 @@ typedef unsigned char state ;
 #define NAVG 10 // number of runs for averages
 
 #define NSTATES (256)
-#define NQUART (0x100)
+#define NQUART (0x10000)
+#define RANDOM_QUART pcg_16
 #define EPSILON (1e-10)
 #define NEVER (DBL_MAX)
 
