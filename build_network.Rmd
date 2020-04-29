@@ -227,10 +227,38 @@ W.DayC = make.household.net(gr, x)
 m = as.matrix( cbind( W.DayC, 0, 0, 4))  # 0 says don't specify group id
 write.table( file=file, m,append=T,col.names =F,row.names = F)
 
-
-
 ```
 
+
+```{r}
+run.sim=function(beta,t1,w1,t2,w2) {
+  setwd("C:/Users/Michael Lachmann/Documents/CV19/pholme_sir/")
+    args = paste("f,AustinSmall10Net10.csv R,63 S,B",beta," w,",t1,",",paste(w1,collapse = ",")," w,",t2,",",paste(w2,collapse = ","),sep="")
+    print(args)
+  x=read.table(text=system2("C:/Users/Michael Lachmann/Documents/CV19/pholme_sir/Release/pholme_sir.exe",
+                            args=args,stdout = T,stderr = F))
+  xx=as.matrix(x[,-1])
+  xx=array(xx,c(dim(xx)[1],5,7))
+  xs = cbind(x[,1],apply(xx,c(1,3),sum))
+  colnames(xs)=c("t","S","E","IA","IY","IH","R","D")
+  as.data.frame(xs)
+}
+```
+
+```{r}
+x=run.sim(0.01,20,c(1,1,1),300,c(1,1,1))
+plot(x$t,x$IY,type="l")
+for( w in seq(0.0,0.9,len=8)) {
+  x2=run.sim(0.01,20,c(1,1,1),300,c(w,1,1))
+  lines(x2$t,x2$IY,col=2)
+}
+x=run.sim(0.01,20,c(1,1,0),300,c(1,1,0))
+plot(x$t,x$IY,type="l")
+for( w in seq(0.0,0.9,len=8)) {
+  x2=run.sim(0.01,20,c(1,1,0),300,c(w,1,0))
+  lines(x2$t,x2$IY,col=2)
+}
+```
 
 
 
