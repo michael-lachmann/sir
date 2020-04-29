@@ -15,9 +15,10 @@ The preview shows you a rendered HTML copy of the contents of the editor. Conseq
 
 
 
-Generate network based on contact matrix
+Generate network based on contact matrix.
+get.degree should be a vectorized function returning the degree distribution given a rate.
 
-```{r}
+```{r gen.net}
 gen.net=function( groups, contacts, get.degree=function(rate){ rpois(length(rate),rate*6)} ) {
   res=c()
   n=length(groups)
@@ -67,13 +68,15 @@ write.net=function( Ns, contacts=1, file="test.csv", weight=1,append=T,get.degre
 }
 ```
 
-
-```{r}
+A test...
+```{r eval=F}
 write.net(c(3,3),append=T)
 ```
 
 Data for household networks.
 ```{r}
+read.actual.files=F
+if( read.actual.files) {
 hh=read.csv("C:/Users/Michael Lachmann/Documents/CV19/NatHHoldTrans/perpub.csv",as.is=T)
 hh1=hh[,c("HOUSEID","R_AGE_IMP","URBAN","HHSIZE")]
 x=cut(hh1$R_AGE_IMP,breaks = c(4,17,49,64,100),include.lowest = F)
@@ -82,21 +85,28 @@ zz1=tapply(hh1$HHSIZE, hh1$HOUSEID, mean)
 zz2=tapply(hh1$URBAN, hh1$HOUSEID, mean)
 hh2=as.data.frame(cbind(HHSIZE=zz1,URBAN=zz2,"[0-4]"=zz1-rowSums(xt),xt))
 write.csv(hh2,file="household_pers.csv")
+} else {
 hh2=read.csv("household_pers.csv",row.names = 1)
+}
 ```
 
 
-```{r}
+Read data for Austin
+```{r Austin data}
 a = as.matrix(read.csv("C:\\Users\\Michael Lachmann\\Documents\\CV19\\py\\SEIR-city\\data\\Excel Data\\Contact Matrix - 5 age groups.csv"))
 b = read.csv("C:\\Users\\Michael Lachmann\\Documents\\CV19\\py\\SEIR-city\\data\\Austin Data\\AustinMSA Population - 5 age groups.csv")
-pp=colSums(b)[-(1:2)]
+pp=tail( colSums(b),5)
+```
+
+```{r make some nets,eval=F}
 x=write.net( pop,a,file="AustinFullNet.csv",append=F)
 x=write.net( floor(pop/10),a,file="C:/Users/Michael Lachmann/Documents/CV19/pholme_sir/AustinSmallNet6.csv",append=F)
 x=write.net( floor(pop/10000),a,file="C:/Users/Michael Lachmann/Documents/CV19/pholme_sir/AustinTinyNet6.csv",append=F)
 ```
 
 
-```{r}
+
+```{r How many households, eval=F}
 A=as.matrix(hh2[,-(1:2)])
 x=apply(A,1,paste,collapse="-")
 y=table(x)
@@ -107,11 +117,6 @@ colnames(x2)[1:5]=colnames(A)
 
 
 ```{r}
-library(pryr)
-groups=list(a=1:10,b=11:20,c=21:30,d=31:40,e=41:50)
-p=sapply(groups,length)
-
-p=floor(pp/100)
 sample.households=function(p,A,N=10000,ng=5) {
 #  A=as.matrix(hh2[,-(1:2)])
   x=apply(A,1,paste,collapse="-")
@@ -121,10 +126,9 @@ sample.households=function(p,A,N=10000,ng=5) {
   colnames(x2)[1:ng]=colnames(A)
   hhh2=x2
   r=matrix(0,N,ng)
-  print(address(r))
   ir=1
   while( max(p)>10  & (ir<dim(r)[1]) ) {
-    print(p)
+    print(p) # Just so we don't get bored
     j=p<10
     i=colSums( t(hhh2[,1:ng]>0) & j )==0
     hhh2=hhh2[i,]
@@ -144,7 +148,6 @@ sample.households=function(p,A,N=10000,ng=5) {
       }
     }
   }
-  print(address(r))
   r[1:(ir-1),]
 }
 
@@ -152,8 +155,6 @@ sample.households=function(p,A,N=10000,ng=5) {
 
 
 ```{r}
-
-
 make.household.net=function(gr, hh.matrix) {
   
   # generate two vectors, 
@@ -201,8 +202,6 @@ make.household.net=function(gr, hh.matrix) {
   
   W
 }
-
-
 ```
 
 
@@ -210,7 +209,7 @@ make.household.net=function(gr, hh.matrix) {
 Generate household for small Austin
 
 ```{r}
-p=floor(pp/10)
+p=floor(pp/100)
 x=sample.households(p,hh2[hh2$URBAN==1,][,-(1:2)],N=100000)
 gr=lapply(1:5,function(i) {  (1:p[i])+c(0,cumsum(p))[i] }  ) 
 W = make.household.net(gr, x)
