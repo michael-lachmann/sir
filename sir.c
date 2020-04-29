@@ -80,6 +80,10 @@ void set_parameters()
 		{2.79135866e-04, 2.14621858e-04, 1.32154040e-02, 2.85633688e-02, 3.38733218e-02, 
 		2.79135866e-03, 2.14621858e-03, 1.32154040e-01, 2.85633688e-01, 3.38733218e-01  } ; // for now only first row is used because there is only one risk group.
 
+	real symp_h_ratio_corrrect[] = {
+		1.610326595443765, 1.924464960134284, 2.31133016137442, 3.724051596082457, 4.95257504190157
+	} ; // hospitalization is 10 times higher for high risk individuals. I made an average of 1*[num low]+10*[num high] for each age class.
+
 	real gamma_y_c, sigma_c ;
 	int i ;
 
@@ -100,6 +104,9 @@ void set_parameters()
 	g.omega_y = 1.0 ;
 	g.omega_h = 0.0 ;
 
+	for( i=0; i<g.ngroup; i++)
+		symp_h_ratio[i] *= symp_h_ratio_corrrect[i] ;
+
 	for( i=0; i<g.ngroup; i++) {
 		g.nu[i] = hosp_f_ratio[i] * g.gamma_h / (g.mu + (g.gamma_h - g.mu  ) * hosp_f_ratio[i] ) ; // hosp_f_ratio is an array of size age.
 		g.pi[i] = symp_h_ratio[i] * g.gamma_y / (g.eta + (g.gamma_y - g.eta) * symp_h_ratio[i] ) ; // symp_h_ratio is an array
@@ -113,6 +120,14 @@ void set_parameters()
 
 }
 
+
+char *SN="SEAYHRD" ;
+
+print_state(state s) {
+	int a = s % 5 ;
+	int i = s / 5 ;
+	printf("%c%d",SN[i],a) ;
+}
 
 
 
@@ -193,32 +208,6 @@ void conditional_infect_neighbours( real t_me, unsigned int me, real rate) {
 }
 
 
-void unconditional_infect_neighbours( unsigned int me) {
-	unsigned int i, you ; 
-	real t, old_t;
-
-	// go through the neighbors of the infected node . .
-	for ( i = 0; i < nd[me].deg; i++) {
-		you = nd[me].nb[i];
-		if (g.infectable[ nd[you].state ]) { // if you is S, you can be infected
-			t = g.now + g.rexp[pcg_16()] / (g.weight[ nd[me].w[i] ]*g.beta)  * nd[me].w_deg_sum ; // get the infection time. (weight already includes 1/beta)
-			if ( t < nd[me].time) {    // when you become exposed, if you do
-				old_t = nd[you].time ;
-				nd[you].time = t;
-				if (nd[you].heap == NONE) { // if not listed before, then extend the heap
-					g.heap[++g.nheap] = you;
-					nd[you].heap = g.nheap;
-				}
-				if( t < old_t)
-					up_heap(nd[you].heap); // this works bcoz the only heap relationship 
-										   // that can be violated is the one between you and its parent
-				else
-					down_heap(nd[you].heap);
-			}
-		}
-	}
-}
-
 
 
 // basically we get to a node, and change its state, make its time earlier
@@ -226,23 +215,15 @@ void unconditional_infect_neighbours( unsigned int me) {
 // in special cases, we infect other nodes, and make their time earlier or later
 // (later only in the special case of changing parameters)
 
-char *SN="SEAYHRD" ;
-
-print_state(state s) {
-	int a = s % 5 ;
-	int i = s / 5 ;
-	printf("%c%d",SN[i],a) ;
-}
 
 
 
-
-void epi_timestep( real T) {
+void epi_timestep( ) {
 	unsigned int me ;
 	state next_s, s ;
 	real  next_t ;
 
-	do {
+
 
 		me = g.heap[1] ;
 		g.now = nd[me].time ;
@@ -289,7 +270,6 @@ void epi_timestep( real T) {
 			// next_state stays what it is
 			down_heap( nd[me].heap ) ;
 		}
-	} while( g.now < T ) ;
 }
 
 
@@ -298,9 +278,8 @@ void reinfect_s_I_neighbours()
 {
 	unsigned int i  ;
 	for (i = 0; i < g.n; i++) {
-		if (nd[i].state == s_I) {
-			unconditional_infect_neighbours( i) ;
-
+		if ( g.state_infect_rate[ nd[i].state ] > 0) {
+			conditional_infect_neighbours(  nd[i].time, i,  g.state_infect_rate[ nd[i].state ]) ;
 		}
 	}
 }
@@ -452,7 +431,7 @@ void free_mats_seir_full( state S, state del) {
 
 int main (int argc, char *argv[]) {
 	unsigned int i,d,uk;
-	real par, R0 ;
+	real par, R0 , last_now;
 	int pos,npos,k, T_i,r ;
 	unsigned int w ;
 	char arg_type, par_type ;
@@ -561,7 +540,7 @@ int main (int argc, char *argv[]) {
 	}
 	}
 
-
+	fprintf(stderr,"done\n") ;
 	g.weight = malloc( g.nweight * sizeof(real)) ;
 	// allocating the heap (N + 1) because its indices are 1,...,N
 	g.heap = malloc((g.n + 1) * sizeof(unsigned int));
@@ -585,7 +564,18 @@ int main (int argc, char *argv[]) {
 			seir_init( 10) ;
 		else
 			reinfect_s_I_neighbours() ;
-		epi_timestep( g.w_time[T_i] ) ;
+
+		last_now = g.now ;
+		while( g.now < g.w_time[T_i] ) {
+			epi_timestep(  ) ;
+			if (g.now - last_now > 1) {
+				printf("%g ",g.now) ;
+				for( i=0; i< g.ngroup*7; i++)
+					printf("%d ",g.s[i]) ;
+				printf("\n") ;
+				last_now = g.now ;
+			}
+		}
 	}
 
 

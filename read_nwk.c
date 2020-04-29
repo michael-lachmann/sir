@@ -113,8 +113,12 @@ void read_data3 (FILE *fp) {
 
 }
 
+
+
+
 void read_data5 (FILE *fp) {
-	unsigned int i, me, you, w, max_w, group_me, group_you, max_group;
+	int i, me, you, w, max_w, group_me, group_you, max_group;
+
 
 	g.n = 0;
 
@@ -161,7 +165,8 @@ void read_data5 (FILE *fp) {
 		nd[me].nb[ nd[me].deg] = you;
 		nd[me].w [ nd[me].deg  ] = w ;
 		nd[me].deg++ ;
-		nd[me].state = group_me-1 ; // convert to starting at 0.
+		if( group_me > 0) // -1 says I don't know, let someone else determine state.
+ 			nd[me].state = group_me-1 ; // convert to starting at 0.
 		g.av_deg++ ;
 
 		// Following is commented out. Assume links are directed. To have undirected links, do that in the file.
