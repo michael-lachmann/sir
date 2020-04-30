@@ -196,6 +196,8 @@ void conditional_infect_neighbours( real t_me, unsigned int me, real rate) {
 				DEBUG( printf("%g %g inf:%d\n",t_me,t,you) ) ;
 				nd[you].time = t;
 				nd[you].next_state = next_state( nd[you].state ) ; // ***** NOT RANDOM YET, because we always switch to E.
+				nd[you].who_infected = me ;
+				nd[you].when_infected = g.now ;
 				if (nd[you].heap == NONE) { // if not listed before, then extend the heap
 					g.heap[++g.nheap] = you;
 					nd[you].heap = g.nheap;
@@ -207,6 +209,76 @@ void conditional_infect_neighbours( real t_me, unsigned int me, real rate) {
 	}
 }
 
+void conditional_infect_neighbours_down( real t_me, unsigned int me, real rate) {
+	unsigned int i, you ; 
+	real t, old_t ;
+
+
+	// ****************************************** This is the problem: if I infected you in the past, but now I chose a time that is larger than when I stay infectious, then 
+	// ****************************************** I don't take things back. Also need to figure out what to do if multiple infections. 
+	// What really needs to be done is to take back all infections and reroll.
+	// go through my neighbors 
+	for ( i = 0; i < nd[me].deg; i++) {
+		you = nd[me].nb[i];
+		if (g.infectable[ nd[you].state ]) { // if you can be infected
+			t = g.now + 
+				g.time_dist[ nd[you].state ][RANDOM_QUART()] / (g.weight[ nd[me].w[i]  ] *rate ) ; // get the infection time
+			if (t < t_me )  {  // When me becomes resistant
+				if( (nd[you].when_infected < g.now-EPSILON) || // infection is old, can ignore
+					(t < nd[you].time) // infection is before your next event
+				) {    // when you become exposed, if you do
+					DEBUG( printf("%g %g inf:%d\n",t_me,t,you) ) ;
+					old_t = nd[you].time ;
+					nd[you].time = t;
+					nd[you].next_state = next_state( nd[you].state ) ; // ***** NOT RANDOM YET, because we always switch to E.
+					nd[you].who_infected = me ;
+					nd[you].when_infected = g.now ;
+					if (nd[you].heap == NONE) { // if not listed before, then extend the heap
+						g.heap[++g.nheap] = you;
+						nd[you].heap = g.nheap;
+					}
+					if( t < old_t)
+						up_heap(nd[you].heap); // this works bcoz the only heap relationship 
+											   // that can be violated is the one between you and its parent
+					else
+						down_heap(nd[you].heap);
+
+					continue ;
+				}
+			}
+			if (nd[you].who_infected == me) { // I didn't infect you this time, but it was my fault before
+				nd[you].time = NEVER ;
+				down_heap( nd[you].heap) ;
+			}
+		}
+	}
+}
+
+void unconditional_infect_neighbours( unsigned int me) {
+	unsigned int i, you ; 
+	real t, old_t;
+
+	// go through the neighbors of the infected node . .
+	for ( i = 0; i < nd[me].deg; i++) {
+		you = nd[me].nb[i];
+		if (g.infectable[ nd[you].state ]) { // if you is S, you can be infected
+			t = g.now + g.rexp[pcg_16()] / (g.weight[ nd[me].w[i] ]*g.beta)  * nd[me].w_deg_sum ; // get the infection time. (weight already includes 1/beta)
+			if ( t < nd[me].time) {    // when you become exposed, if you do
+				old_t = nd[you].time ;
+				nd[you].time = t;
+				if (nd[you].heap == NONE) { // if not listed before, then extend the heap
+					g.heap[++g.nheap] = you;
+					nd[you].heap = g.nheap;
+				}
+				if( t < old_t)
+					up_heap(nd[you].heap); // this works bcoz the only heap relationship 
+										   // that can be violated is the one between you and its parent
+				else
+					down_heap(nd[you].heap);
+			}
+		}
+	}
+}
 
 
 
@@ -276,10 +348,14 @@ void epi_timestep( ) {
 
 void reinfect_s_I_neighbours()
 {
-	unsigned int i  ;
-	for (i = 0; i < g.n; i++) {
-		if ( g.state_infect_rate[ nd[i].state ] > 0) {
-			conditional_infect_neighbours(  nd[i].time, i,  g.state_infect_rate[ nd[i].state ]) ;
+	unsigned int me, i  ;
+	state s;
+
+	for (i = 1; i <= g.nheap; i++) {
+		me = g.heap[i] ;
+		s = nd[me].state ;
+		if ( g.state_infect_rate[ s ] > EPSILON) {
+			conditional_infect_neighbours_down(  nd[me].time, me,  g.state_infect_rate[ s ]) ;
 		}
 	}
 }
@@ -300,7 +376,7 @@ void seir_init( unsigned int nS) {
 	// initialize
 	for (i = 0; i < g.n; i++) {
 		nd[i].heap = NONE;
-		nd[i].time = DBL_MAX; // to a large value
+		nd[i].time = NEVER; // to a large value
 		nd[i].state = nd[i].state % g.ngroup ; // reset to modulo ngroup
 		g.s[ nd[i].state ]++ ;
 	}
@@ -440,7 +516,7 @@ int main (int argc, char *argv[]) {
 #ifdef TIME
 	struct timespec t0, t1;
 #endif
-	pcg_init();
+	pcg_init( 42) ;
 	g.w_n = 0 ;
 	g.av_deg = 0.0 ;
 	g.ngroup = 1 ;
@@ -458,7 +534,7 @@ int main (int argc, char *argv[]) {
 	case 'H': // home networks 
 		sscanf(argv[k],"%c,%d,%d,%u",&arg_type,&i,&d,&w) ;
 		if( i % d != 0) {
-			printf("for full network, size (%d) needs to be a multiple of clust (%d)\n",i,d) ;
+			fprintf(stderr,"for full network, size (%d) needs to be a multiple of clust (%d)\n",i,d) ;
 			return 1 ;
 		}
 		gen_full_nwk( i, d, w) ;
@@ -484,7 +560,7 @@ int main (int argc, char *argv[]) {
 		break ;
 	case 'R': // random seed
 		sscanf( argv[k],"%c,%u",&arg_type,&i) ;
-		g.state = (uint64_t)i ;
+		pcg_init( (uint64_t)i );
 		break ;
 	case 'F': // read network from file
 		fp = fopen(argv[k]+2, "r"); // skip over 'F,'

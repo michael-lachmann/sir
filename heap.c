@@ -44,7 +44,7 @@ void down_heap (unsigned int here) {
 
 		// continue checking below
 		down_heap(smallest);
-	}
+	} 
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

@@ -97,8 +97,9 @@ typedef struct NODE {
 	unsigned int *nb ; // neighbors
 	unsigned int *w;  // edge weight index
 
-	unsigned int state, next_state ; // state also includes things like age risk etc. 
-	real time, next_time;        // time of prev, next event
+	unsigned int state, next_state ; // state also includes things like age risk etc.
+	unsigned int who_infected ;      // who is responsible for next infection. Important so that it can be taken back when needed.
+	real time, when_infected;        // time of next event, when infection happened.
 
 	unsigned int heap; // place on heap
 } NODE;
@@ -122,6 +123,6 @@ extern uint16_t pcg_16 ();
 extern uint8_t pcg_8() ;
 extern uint32_t pcg_32 ();
 extern uint32_t pcg_32_bounded ();
-extern void pcg_init ();
+extern void pcg_init ( uint64_t seed);
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

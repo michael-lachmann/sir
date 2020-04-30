@@ -13,30 +13,10 @@ extern GLOBALS g;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-void pcg_init () {
+void pcg_init ( uint64_t initstate ) {
 	int fd;
 	unsigned long sz;
-	uint64_t initstate;
-#if 0
-	if (g.state != 0) return;
 
-	fd = open("/dev/random", O_RDONLY);
-	
-	if (fd < 1) {
-		fprintf(stderr, " can't open /dev/random\n");
-		exit(1);
-	}
-
-	sz = read(fd, &initstate, sizeof(uint64_t));
-	
-	close(fd);
-
-	if (sz < sizeof(uint64_t)) {
-		fprintf(stderr, " can't read /dev/random\n");
-		exit(1);
-	}
-#endif
-	initstate = 42 ;
 	g.state = (initstate + 1442695040888963407ULL) * 6364136223846793005ULL + 1442695040888963407ULL;
 }
 
