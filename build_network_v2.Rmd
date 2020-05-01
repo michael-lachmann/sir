@@ -1,0 +1,191 @@
+
+# PathIS=(dirname(rstudioapi::getActiveDocumentContext()$path))
+# PathIS_data = paste(PathIS,'/', sep = "")
+# setwd(PathIS)
+setwd('/Users/zwdu/Documents/Github/sir')
+
+gen.net=function( groups, contacts, get.degree=function(rate){ rpois(length(rate),rate*6)} ) {
+  res=c()
+  n=length(groups)
+  for( i in 1:n) {
+    for( j in 1:n) {
+      me = 1:length(groups[[i]]) # index of the FROM
+      d = get.degree( rep(contacts[i,j], length(me))) # get number of contacts each should have
+      me.out = rep(me, times=d) 
+      if( length(me.out)>0) {
+        if( i != j) {
+          me.to = sample( 1:length(groups[[j]]), length(me.out), rep=T) # get index of TO
+        } else { # when we link to own group, avoid self-links.
+          me.to = sample( 1:(length(groups[[j]])-1), length(me.out), rep=T) # n-1, don't chose me
+          me.to[ me.to >= me.out] = me.to[ me.to >= me.out]+1 # avoid me.to.i
+        }
+        res = rbind( res, cbind( groups[[i]][me.out], groups[[j]][me.to], i, j ))
+      }
+    }
+  }
+  res
+}
+
+# `write.net` writes the network tp a file. You can specify the weight ID. 
+
+options(scipen=7)
+write.net=function( Ns, contacts=1, file="test.csv", weight=1,append=T,get.degree=function(rate){ rpois(length(rate),rate*6)}) {
+  n = length(Ns)
+  cNe = cumsum( Ns)         # end of group
+  cNs = c(0,head(cNe,-1))+1 # start of group
+  groups = lapply( 1:n, function(i){
+    cNs[i]:cNe[i]
+  })
+  if( length(contacts) < n*n) {
+    contacts = matrix(1/n,n,n) 
+  }
+  net = gen.net( groups, contacts, get.degree = get.degree)
+  net = cbind(net,weight)
+  cat(paste("writing to",getwd(),":",file,"\n"))
+  write.table( file=file, as.matrix(net),append=append,col.names =F,row.names = F)
+  net
+} 
+write.net(c(3,3),append=T)
+
+# Data for household networks. 
+hh=read.csv("Csv/perpub.csv",as.is=T)
+hh1=hh[,c("HOUSEID","R_AGE_IMP","URBAN","HHSIZE")]
+x=cut(hh1$R_AGE_IMP,breaks = c(4,17,49,64,100),include.lowest = F)
+xt=table(hh1$HOUSEID, x)
+zz1=tapply(hh1$HHSIZE, hh1$HOUSEID, mean)
+zz2=tapply(hh1$URBAN, hh1$HOUSEID, mean)
+hh2=as.data.frame(cbind(HHSIZE=zz1,URBAN=zz2,"[0-4]"=zz1-rowSums(xt),xt))
+write.csv(hh2,file="household_pers.csv")
+hh2=read.csv("household_pers.csv",row.names = 1) 
+
+a = as.matrix(read.csv("Contact Matrix - 5 age groups.csv"))
+b = read.csv("Austin Population - 5 age groups.csv")
+pop=colSums(b)[-(1:2)]
+x=write.net( pop,a,file="AustinFullNet.csv",append=F)
+x=write.net( floor(pop/10),a,file="pholme_sir/AustinSmallNet6.csv",append=F)
+x=write.net( floor(pop/10000),a,file="pholme_sir/AustinTinyNet6.csv",append=F) 
+
+A=as.matrix(hh2[,-(1:2)])
+x=apply(A,1,paste,collapse="-")
+y=table(x)
+y1=matrix(as.numeric(unlist(strsplit(names(y),"-"))),length(y),5,byrow = T)
+x2=cbind(y1,N=y)
+colnames(x2)[1:5]=colnames(A) 
+
+
+
+library(pryr)
+groups=list(a=1:10,b=11:20,c=21:30,d=31:40,e=41:50)
+p=sapply(groups,length)
+
+p=floor(pp/100)
+sample.households=function(p,A,N=10000,ng=5) {
+#  A=as.matrix(hh2[,-(1:2)])
+  x=apply(A,1,paste,collapse="-")
+  y=table(x)
+  y1=matrix(as.numeric(unlist(strsplit(names(y),"-"))),length(y),ng,byrow = T)
+  x2=cbind(y1,N=y)
+  colnames(x2)[1:ng]=colnames(A)
+  hhh2=x2
+  r=matrix(0,N,ng)
+  print(address(r))
+  ir=1
+  while( max(p)>10  & (ir<dim(r)[1]) ) {
+    print(p)
+    j=p<10
+    i=colSums( t(hhh2[,1:ng]>0) & j )==0
+    hhh2=hhh2[i,]
+    j=colSums(hhh2[,1:ng])<10
+    while( (min(p[!j])>9) & (ir<dim(r)[1])) {
+      if( sum(!j)>1) {
+        g=sample((1:length(p))[!j],1,p=p[!j])
+      } else {
+        g=(1:ng)[!j]
+      }
+      i=sample(1:dim(hhh2)[1],1,p=hhh2[,g]*hhh2[,"N"])
+      if( min(p-hhh2[i,1:ng])>0 ) {
+        p=p-hhh2[i,1:ng]
+        r[ir,]=hhh2[i,1:ng]
+        ir=ir+1
+      } else {
+      }
+    }
+  }
+  print(address(r))
+  r[1:(ir-1),]
+} 
+
+
+
+make.household.net=function(gr, hh.matrix) {
+  
+  # generate two vectors, 
+  # 1) x.hh identity of houshold, so we can put them back togeter 
+  # 2) x.in chose individuals from group g.
+  X.in.hh=sapply(1:5,function(g) {
+    x.hh=rep(1:length(hh.matrix[,g]),times=hh.matrix[,g])
+    x.in=sample(gr[[g]],length(x.hh))
+    cbind(x.in,x.hh)
+  })
+  
+  # put double vectors from groups in one 
+  X.in.hh = do.call( rbind, X.in.hh)
+  # list of individuals in each household
+  # Xl.hh= lapply(1:dim(hh.matrix)[1], function(i) X.in.hh[X.in.hh[,2]==i,1] )
+  Xl.hh = tapply( X.in.hh[,1], X.in.hh[,2],c)
+  Xl.hh.l=sapply(Xl.hh,length)
+  # max member in hh
+  n=max(Xl.hh.l)
+  
+  # matrices of indexes
+  ii=matrix(1:n,n,n)
+  jj=t(ii)
+  
+  # make full connectivity graph
+  W=lapply(1:n,function(l){
+    # find household with these many members
+    i=  Xl.hh.l==l
+    if( sum(i)>0 ) {
+    X=Xl.hh[i]
+    
+    # submatrices for size l
+    zii=ii[1:l,1:l]
+    zjj=t(zii)
+
+    # put all household members into single matrix
+    L=do.call(rbind,X)
+    # zii is index of FROM node, zjj TO node. L[,zii] gives vector of FROM nodes, but exclude connection with self.
+    # L[,zjj] are the TO nodes, but again exclude self.
+    cbind(   c( t(  L[,zii[zii!=zjj]]  )),
+             c( t(  L[,zjj[zii!=zjj]]  )))
+    }
+  })
+  W=do.call(rbind,W)
+  
+  W
+}
+
+
+
+# Generate household for small Austin
+
+p=floor(pp/10)
+x=sample.households(p,hh2[hh2$URBAN==1,][,-(1:2)],N=100000)
+gr=lapply(1:5,function(i) {  (1:p[i])+c(0,cumsum(p))[i] }  ) 
+W = make.household.net(gr, x)
+file = "pholme_sir/AustinSmall10Net10.csv"
+x=write.net( p,a,file=file,append=F,get.degree=function(rate){ rpois(length(rate),rate*10)})
+m = as.matrix( cbind( W, 0, 0, 3))  # 0 says don't specify group id
+write.table( file=file, m,append=T,col.names =F,row.names = F)
+
+# make daycares
+x = matrix(0,1,5)
+x[1,1]=10; x[1,3]=1 # 10 kids, one adult
+x = matrix(x,floor(p[1]/10),5,byrow = T)
+colnames(x)=colnames(hh2)[-(1:2)]
+W.DayC = make.household.net(gr, x)
+m = as.matrix( cbind( W.DayC, 0, 0, 4))  # 0 says don't specify group id
+write.table( file=file, m,append=T,col.names =F,row.names = F)
+
+
+

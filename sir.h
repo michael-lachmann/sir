@@ -34,9 +34,11 @@ typedef unsigned char state ;
 #define NAVG 10 // number of runs for averages
 
 #define NSTATES (256)
-#define NQUART (0x100)
+#define NQUART (0x10000)
+#define RANDOM_QUART pcg_16
 #define EPSILON (1e-10)
 #define NEVER (DBL_MAX)
+#define MAXRAND (4294967295.0)
 
 #define I_OR_R (UINT_MAX - 1)
 #define NONE UINT_MAX
@@ -68,7 +70,8 @@ typedef struct GLOBALS {
 	uint64_t state;
 	uint32_t rmem;
 	real          *time_dist [NSTATES] ;
-	state *state_dist[NSTATES] ;
+	state         state_trans[NSTATES][3] ;
+	uint32_t	  state_trans_p[NSTATES][3] ;
 	real          state_infect_rate[NSTATES] ;
 	bool	      self_change[NSTATES] ; // can change without infection?
 	bool          infectable[NSTATES] ;

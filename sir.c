@@ -6,6 +6,9 @@
 GLOBALS g;
 NODE *nd;
 
+#define DEBUG(...)
+
+
 void set_parameters()
 {
 
@@ -77,6 +80,10 @@ void set_parameters()
 		{2.79135866e-04, 2.14621858e-04, 1.32154040e-02, 2.85633688e-02, 3.38733218e-02, 
 		2.79135866e-03, 2.14621858e-03, 1.32154040e-01, 2.85633688e-01, 3.38733218e-01  } ; // for now only first row is used because there is only one risk group.
 
+	real symp_h_ratio_corrrect[] = {
+		1.610326595443765, 1.924464960134284, 2.31133016137442, 3.724051596082457, 4.95257504190157
+	} ; // hospitalization is 10 times higher for high risk individuals. I made an average of 1*[num low]+10*[num high] for each age class.
+
 	real gamma_y_c, sigma_c ;
 	int i ;
 
@@ -97,6 +104,9 @@ void set_parameters()
 	g.omega_y = 1.0 ;
 	g.omega_h = 0.0 ;
 
+	for( i=0; i<g.ngroup; i++)
+		symp_h_ratio[i] *= symp_h_ratio_corrrect[i] ;
+
 	for( i=0; i<g.ngroup; i++) {
 		g.nu[i] = hosp_f_ratio[i] * g.gamma_h / (g.mu + (g.gamma_h - g.mu  ) * hosp_f_ratio[i] ) ; // hosp_f_ratio is an array of size age.
 		g.pi[i] = symp_h_ratio[i] * g.gamma_y / (g.eta + (g.gamma_y - g.eta) * symp_h_ratio[i] ) ; // symp_h_ratio is an array
@@ -110,6 +120,14 @@ void set_parameters()
 
 }
 
+
+char *SN="SEAYHRD" ;
+
+print_state(state s) {
+	int a = s % 5 ;
+	int i = s / 5 ;
+	printf("%c%d",SN[i],a) ;
+}
 
 
 
@@ -154,7 +172,14 @@ real myQexp(real q) {
 	return -log(q) ;
 }
 
-
+state next_state(state s) {
+	int i=0;
+	while (g.state_trans_p[s][i] < MAXRAND) {
+		if( pcg_32() < g.state_trans_p[s][i] ) return g.state_trans[s][i] ;
+		i++ ;
+	}
+	return g.state_trans[s][i] ;
+}
 
 void conditional_infect_neighbours( real t_me, unsigned int me, real rate) {
 	unsigned int i, you ; 
@@ -165,11 +190,12 @@ void conditional_infect_neighbours( real t_me, unsigned int me, real rate) {
 		you = nd[me].nb[i];
 		if (g.infectable[ nd[you].state ]) { // if you can be infected
 			t = g.now + 
-				g.time_dist[ nd[you].state ][pcg_8()] / (g.weight[ nd[me].w[i]  ] *rate ) ; // get the infection time
+				g.time_dist[ nd[you].state ][RANDOM_QUART()] / (g.weight[ nd[me].w[i]  ] *rate ) ; // get the infection time
 			if ((t < t_me ) &&     // When me becomes resistant
 				(t < nd[you].time)) {    // when you become exposed, if you do
+				DEBUG( printf("%g %g inf:%d\n",t_me,t,you) ) ;
 				nd[you].time = t;
-				nd[you].next_state = g.state_dist[ nd[you].state ][0] ; // ***** NOT RANDOM YET
+				nd[you].next_state = next_state( nd[you].state ) ; // ***** NOT RANDOM YET, because we always switch to E.
 				if (nd[you].heap == NONE) { // if not listed before, then extend the heap
 					g.heap[++g.nheap] = you;
 					nd[you].heap = g.nheap;
@@ -182,32 +208,6 @@ void conditional_infect_neighbours( real t_me, unsigned int me, real rate) {
 }
 
 
-void unconditional_infect_neighbours( unsigned int me) {
-	unsigned int i, you ; 
-	real t, old_t;
-
-	// go through the neighbors of the infected node . .
-	for ( i = 0; i < nd[me].deg; i++) {
-		you = nd[me].nb[i];
-		if (g.infectable[ nd[you].state ]) { // if you is S, you can be infected
-			t = g.now + g.rexp[pcg_16()] / (g.weight[ nd[me].w[i] ]*g.beta)  * nd[me].w_deg_sum ; // get the infection time. (weight already includes 1/beta)
-			if ( t < nd[me].time) {    // when you become exposed, if you do
-				old_t = nd[you].time ;
-				nd[you].time = t;
-				if (nd[you].heap == NONE) { // if not listed before, then extend the heap
-					g.heap[++g.nheap] = you;
-					nd[you].heap = g.nheap;
-				}
-				if( t < old_t)
-					up_heap(nd[you].heap); // this works bcoz the only heap relationship 
-										   // that can be violated is the one between you and its parent
-				else
-					down_heap(nd[you].heap);
-			}
-		}
-	}
-}
-
 
 
 // basically we get to a node, and change its state, make its time earlier
@@ -216,12 +216,14 @@ void unconditional_infect_neighbours( unsigned int me) {
 // (later only in the special case of changing parameters)
 
 
-void epi_timestep( real T) {
+
+
+void epi_timestep( ) {
 	unsigned int me ;
 	state next_s, s ;
 	real  next_t ;
 
-	do {
+
 
 		me = g.heap[1] ;
 		g.now = nd[me].time ;
@@ -232,6 +234,11 @@ void epi_timestep( real T) {
 
 		g.s[ nd[me].state      ]-- ;
 		g.s[ nd[me].next_state ]++ ;
+		DEBUG( printf("%d ",me) ) ;
+		DEBUG( print_state( nd[me].state) ) ;
+		DEBUG( printf("->") ) ;
+		DEBUG( print_state( nd[me].next_state) ) ;
+		DEBUG( printf("\n") ) ;
 		nd[me].state = nd[me].next_state ;
 
 
@@ -245,9 +252,9 @@ void epi_timestep( real T) {
 		// If it is a state that can infect others, schedule those infections.
 		if( g.self_change[s] ) { // State is one that will change on its own in the future
 			// time of next own change
-			next_t = g.now + g.time_dist [s][pcg_8()] ; 
+			next_t = g.now + g.time_dist [s][RANDOM_QUART()] ; 
 			// choose next state
-			next_s =    g.state_dist[s][pcg_8()] ;
+			next_s =    next_state(s) ;
 
 			// If infection rate is bigger than 0, test for infections.
 			if( g.state_infect_rate[s] > EPSILON ) 
@@ -263,7 +270,6 @@ void epi_timestep( real T) {
 			// next_state stays what it is
 			down_heap( nd[me].heap ) ;
 		}
-	} while( g.now < T ) ;
 }
 
 
@@ -272,9 +278,8 @@ void reinfect_s_I_neighbours()
 {
 	unsigned int i  ;
 	for (i = 0; i < g.n; i++) {
-		if (nd[i].state == s_I) {
-			unconditional_infect_neighbours( i) ;
-
+		if ( g.state_infect_rate[ nd[i].state ] > 0) {
+			conditional_infect_neighbours(  nd[i].time, i,  g.state_infect_rate[ nd[i].state ]) ;
 		}
 	}
 }
@@ -290,8 +295,6 @@ void seir_init( unsigned int nS) {
 
 	for(i=0; i<NSTATES; i++)
 		g.s[i] = 0 ;
-
-	g.s[(unsigned int)S] = g.n ;
 
 
 	// initialize
@@ -339,21 +342,22 @@ void _init_mats_seir_full( struct _named_seir_args *args) {
 
 	for (i = S; i <= D;  i+= args->del) {
 		g.time_dist[i] = malloc( NQUART * sizeof(real) ) ;
-		g.state_dist[i] = malloc( NQUART * sizeof(state) ) ;
 	}
 
 
 	// S
-	for( i=0; i<NQUART; i++) g.time_dist [S][i] = myQexp( (1.0+i)/NQUART ) / args->beta ;
-	for( i=0; i<NQUART; i++) g.state_dist[S][i] = E ;
+	for( i=0; i< NQUART; i++) g.time_dist [S][i] = myQexp( (1.0+i)/NQUART ) / args->beta ;
+	g.state_trans_p[S][0] = MAXRAND ;  g.state_trans[S][0]   = E ;	
+
 	g.state_infect_rate[S] = 0.0 ;
 	g.self_change[S] = FALSE ;
 	g.infectable[S] = TRUE ;
 
 	// E
-	for( i=0; i<           NQUART; i++) g.time_dist [E][i] = myQexp( (1.0+i)/NQUART ) / args->sigma;
-	for( i=0; i< args->tau*NQUART; i++) g.state_dist[E][i] = IY ;
-	for(    ; i<           NQUART; i++) g.state_dist[E][i] = IA ;
+	for( i=0; i< NQUART; i++) g.time_dist [E][i] = myQexp( (1.0+i)/NQUART ) / args->sigma;
+	g.state_trans_p[E][0] = args->tau * MAXRAND ; g.state_trans[E][0]   = IY ;	
+	g.state_trans_p[E][1] = MAXRAND ;             g.state_trans[E][1]   = IA ;	
+
 	g.state_infect_rate[E] = args->omegaE ;
 	g.self_change[E] = TRUE ;
 	g.infectable[E] = FALSE ;
@@ -362,16 +366,18 @@ void _init_mats_seir_full( struct _named_seir_args *args) {
 	rateIY = (1- args->pi) * args->gammaY + args->pi * args->eta;
 	frac1 =  (1- args->pi) * args->gammaY                        / rateIY ;
 
-	for( i=0; i<            NQUART ; i++) g.time_dist [IY][i] = myQexp( (1.0+i)/NQUART ) / rateIY;
-	for( i=0; i<      frac1*NQUART ; i++) g.state_dist[IY][i] = R ;
-	for(    ; i<            NQUART ; i++) g.state_dist[IY][i] = IH ;
+	for( i=0; i< NQUART ; i++) g.time_dist [IY][i] = myQexp( (1.0+i)/NQUART ) / rateIY;
+	g.state_trans_p[IY][0] = frac1 * MAXRAND;  g.state_trans[IY][0]   = R ;
+	g.state_trans_p[IY][1] = MAXRAND;          g.state_trans[IY][1]   = IH ;
+
 	g.state_infect_rate[IY] = args->omegaY ;
 	g.self_change[IY] = TRUE ;
 	g.infectable[IY] = FALSE ;
 
 	// IA
 	for( i=0; i<NQUART; i++) g.time_dist [IA][i] = myQexp( (1.0+i)/NQUART ) / args->gammaA;
-	for( i=0; i<NQUART; i++) g.state_dist[IA][i] = R ;
+	g.state_trans_p[IA][0] = MAXRAND;     g.state_trans[IA][0]   = R ;
+
 	g.state_infect_rate[IA] = args->omegaA ;
 	g.self_change[IA] = TRUE ;
 	g.infectable[IA] = FALSE ;
@@ -380,9 +386,10 @@ void _init_mats_seir_full( struct _named_seir_args *args) {
 	rateIH = (1- args->nu) * args->gammaH  +  args->nu * args->mu ;
 	frac1  = (1- args->nu) * args->gammaH                          / rateIH ;
 
-	for( i=0; i<         NQUART ; i++) g.time_dist [IH][i] = myQexp( (i+1)/NQUART ) / rateIH;
-	for( i=0; i< frac1 * NQUART ; i++) g.state_dist[IH][i] = R ;
-	for(    ; i<         NQUART ; i++) g.state_dist[IH][i] = D ;
+	for( i=0; i< NQUART ; i++) g.time_dist [IH][i] = myQexp( (1.0+i)/NQUART ) / rateIH;
+	g.state_trans_p[IH][0] = frac1 * MAXRAND; g.state_trans[IH][0]   = R ;
+	g.state_trans_p[IH][1] = MAXRAND;         g.state_trans[IH][1]   = D ;
+	
 	g.state_infect_rate[IH] = args->omegaH ;
 	g.self_change[IH] = TRUE ;
 	g.infectable[IH] = FALSE ;
@@ -390,14 +397,16 @@ void _init_mats_seir_full( struct _named_seir_args *args) {
 
 	// R
 	for( i=0; i<NQUART; i++) g.time_dist [R][i] = NEVER ;
-	for( i=0; i<NQUART; i++) g.state_dist[R][i] = 0 ;
+	g.state_trans_p[R][0] = MAXRAND; g.state_trans[R][0]   = R ;
+
 	g.state_infect_rate[R] = 0.0 ;
 	g.self_change[R] = FALSE ;
 	g.infectable[R] = FALSE ;
 
 	// D
 	for( i=0; i<NQUART; i++) g.time_dist [R][i] = NEVER ;
-	for( i=0; i<NQUART; i++) g.state_dist[R][i] = 0 ;
+	g.state_trans_p[D][0] = MAXRAND ;  g.state_trans[D][0]   = D ;
+
 	g.state_infect_rate[R] = 0.0 ;
 	g.self_change[R] = FALSE ;
 	g.infectable[R] = FALSE ;
@@ -412,7 +421,6 @@ void free_mats_seir_full( state S, state del) {
 	state D= S+6*del ;
 	for (i = S; i < D; i+=del) {
 		free( g.time_dist[i]) ;
-		free( g.state_dist[i] );
 	}
 }
 
@@ -423,7 +431,7 @@ void free_mats_seir_full( state S, state del) {
 
 int main (int argc, char *argv[]) {
 	unsigned int i,d,uk;
-	real par, R0 ;
+	real par, R0 , last_now;
 	int pos,npos,k, T_i,r ;
 	unsigned int w ;
 	char arg_type, par_type ;
@@ -532,14 +540,13 @@ int main (int argc, char *argv[]) {
 	}
 	}
 
-
+	fprintf(stderr,"done\n") ;
 	g.weight = malloc( g.nweight * sizeof(real)) ;
 	// allocating the heap (N + 1) because its indices are 1,...,N
 	g.heap = malloc((g.n + 1) * sizeof(unsigned int));
 
 	//init_mats_seir( g.beta, g.gamma, g.sigma) ;
 
-	g.beta = 2.2/7/10 ;
 	set_parameters() ;
 	for( i=0; i<g.ngroup; i++) {
 		init_mats_seir_full( .S=i, .del=g.ngroup,   
@@ -547,6 +554,8 @@ int main (int argc, char *argv[]) {
 			.omegaY = g.omega_y, .omegaA = g.omega_a[i], .omegaE = g.omega_e[i], .omegaH = g.omega_h ,
 			.sigma = g.sigma, .mu= g.mu, .nu= g.nu[i], .pi = g.pi[i], .tau = g.tau, .eta= g.eta       ) ;
 	}
+
+
 	for( T_i=0; T_i < g.w_n; T_i++) {
 		for( i=1; i< g.nweight; i++) {
 			g.weight[i] = (g.w_val[  T_i*(g.nweight) +i ] ) ;
@@ -555,7 +564,18 @@ int main (int argc, char *argv[]) {
 			seir_init( 10) ;
 		else
 			reinfect_s_I_neighbours() ;
-		epi_timestep( g.w_time[T_i] ) ;
+
+		last_now = g.now ;
+		while( g.now < g.w_time[T_i] ) {
+			epi_timestep(  ) ;
+			if (g.now - last_now > 1) {
+				printf("%g ",g.now) ;
+				for( i=0; i< g.ngroup*7; i++)
+					printf("%d ",g.s[i]) ;
+				printf("\n") ;
+				last_now = g.now ;
+			}
+		}
 	}
 
 
@@ -564,6 +584,8 @@ int main (int argc, char *argv[]) {
 	// printf("avg. time to extinction: %lg (%lg)\n", st1, sqrt((st2 - SQ(st1)) / (NAVG - 1)));
 
 	// cleaning up
+
+
 	for (i = 0; i < g.n; i++) {
 		free(nd[i].nb);
 		free(nd[i].w);
