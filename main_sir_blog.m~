@@ -100,7 +100,7 @@ while heap.nq>0 || t==1
     sum_newI = 0;
     if heap.nq>0
         
-        %% ZW: @Michael, not sure whether to increase time t with step 0.1 is good choice
+        %% ZW: Not sure whether to increase time t with step 0.1
         t = t+0.1;
         Event_t = t;
         while Event_t<=t && heap.nq>0
