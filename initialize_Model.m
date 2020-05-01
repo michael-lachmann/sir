@@ -29,3 +29,8 @@ Labs_Str = {'S', 'I', 'R'};
 % heap.nq: number of events in heap.queue.
 heap.queue = zeros(100, 4);
 heap.nq = 0;
+
+
+
+%% 
+NEVER=10^4;
